@@ -98,7 +98,7 @@ export default function App() {
             <div className="button-stack">
               <button type="button" className="action-button record pulse" onClick={goToNextStep}>
                 <img src={RedButton} alt="Parler" />
-                <span>Appuyer une fois pour parler</span>
+                <span>Appuyez pour enregistrer<br />Appuyez à nouveau pour arrêter</span>
               </button>
             </div>
           </section>
