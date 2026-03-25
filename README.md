@@ -26,10 +26,16 @@ Installer les dépendances :
 npm install
 ```
 
-Lancer le serveur de développement :
+Lancer le serveur de développement (Front) :
 
 ```bash
 npm run dev
+```
+
+Lancer le serveur de développement (Back) :
+
+```bash
+npm run server
 ```
 
 Créer un build de production :

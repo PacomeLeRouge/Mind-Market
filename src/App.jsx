@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { GreenButton, Hand, Joystick, OpenHub, RedButton, Whisper } from './svg/index.js';
 
 const questions = [
@@ -11,10 +11,19 @@ const steps = ['question', 'speak', 'recording', 'confirm', 'thanks'];
 const recordingBars = Array.from({ length: 15 }, (_, index) => index);
 const QUESTION_ROTATION_MS = 5000;
 const THANKS_RESTART_MS = 10000;
+const MIN_RECORDING_DURATION_MS = 5000;
 
 export default function App() {
   const [activeStep, setActiveStep] = useState(steps[0]);
   const [questionIndex, setQuestionIndex] = useState(0);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordedAudio, setRecordedAudio] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
+  
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recordingStartTimeRef = useRef(null);
 
   useEffect(() => {
     if (activeStep !== 'question') {
@@ -41,12 +50,66 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [activeStep]);
 
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      
+      audioChunksRef.current = [];
+      recordingStartTimeRef.current = Date.now();
+      
+      mediaRecorder.ondataavailable = (event) => {
+        audioChunksRef.current.push(event.data);
+      };
+      
+      mediaRecorder.onstop = () => {
+        const duration = Date.now() - recordingStartTimeRef.current;
+        
+        if (duration >= MIN_RECORDING_DURATION_MS) {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          setRecordedAudio(audioBlob);
+          setActiveStep('confirm');
+        } else {
+          console.log(`Enregistrement trop court (${duration}ms < ${MIN_RECORDING_DURATION_MS}ms)`);
+          alert(`Enregistrement trop court (${(duration / 1000).toFixed(1)}s). Minimum 5 secondes requis.`);
+          setActiveStep('speak');
+        }
+        
+        // Fermer le stream du micro
+        stream.getTracks().forEach(track => track.stop());
+      };
+      
+      mediaRecorder.start();
+      mediaRecorderRef.current = mediaRecorder;
+      setIsRecording(true);
+    } catch (error) {
+      console.error('Erreur accès au micro:', error);
+      alert('Impossible d\'accéder au microphone. Vérifiez les permissions.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
   const currentQuestion = questions[questionIndex];
 
   const goToNextStep = () => {
     const currentIndex = steps.indexOf(activeStep);
     const nextStep = steps[Math.min(currentIndex + 1, steps.length - 1)];
     setActiveStep(nextStep);
+  };
+
+  const handleRecordingButtonClick = () => {
+    if (activeStep === 'speak') {
+      startRecording();
+      setActiveStep('recording');
+    } else if (activeStep === 'recording') {
+      stopRecording();
+    }
   };
 
   const restartFlow = () => {
@@ -96,7 +159,7 @@ export default function App() {
             </div>
 
             <div className="button-stack">
-              <button type="button" className="action-button record pulse" onClick={goToNextStep}>
+              <button type="button" className="action-button record pulse" onClick={handleRecordingButtonClick}>
                 <img src={RedButton} alt="Parler" />
                 <span>Appuyez pour enregistrer<br />Appuyez à nouveau pour arrêter</span>
               </button>
@@ -125,7 +188,7 @@ export default function App() {
             </div>
 
             <div className="button-stack">
-              <button type="button" className="action-button record" onClick={goToNextStep}>
+              <button type="button" className="action-button record" onClick={handleRecordingButtonClick}>
                 <img src={RedButton} alt="Finaliser" />
                 <span>Finaliser l'enregistrement</span>
               </button>
@@ -138,14 +201,90 @@ export default function App() {
             <div className="top-copy top-copy--spacious">
               <h2>Confirmer votre réponse</h2>
               <p>Votre message sera envoyé au porteur de projet.</p>
+              {uploadError && (
+                <div style={{ 
+                  color: '#d32f2f', 
+                  marginTop: '10px', 
+                  padding: '10px',
+                  backgroundColor: 'rgba(211, 47, 47, 0.1)',
+                  borderRadius: '4px'
+                }}>
+                  Erreur: {uploadError}
+                </div>
+              )}
             </div>
 
             <div className="button-stack button-stack--split">
-              <button type="button" className="action-button confirm pulse" onClick={goToNextStep}>
+              <button 
+                type="button" 
+                className="action-button confirm pulse" 
+                onClick={async () => {
+                  if (recordedAudio) {
+                    setIsUploading(true);
+                    setUploadError(null);
+                    
+                    try {
+                      const formData = new FormData();
+                      formData.append('audio', recordedAudio, 'recording.webm');
+                      formData.append('question', currentQuestion);
+                      
+                      const response = await fetch('/api/upload-audio', {
+                        method: 'POST',
+                        body: formData
+                      });
+
+                      if (!response.ok) {
+                        const contentType = response.headers.get('content-type');
+                        let errorMsg = `Erreur serveur (${response.status})`;
+                        
+                        try {
+                          if (contentType?.includes('application/json')) {
+                            const error = await response.json();
+                            errorMsg = error.error || errorMsg;
+                          } else {
+                            const text = await response.text();
+                            errorMsg = text || errorMsg;
+                          }
+                        } catch (e) {
+                          console.error('Impossible de parser la réponse erreur:', e);
+                        }
+                        
+                        throw new Error(errorMsg);
+                      }
+
+                      const contentType = response.headers.get('content-type');
+                      if (!contentType?.includes('application/json')) {
+                        throw new Error('Le serveur n\'a pas répondu avec du JSON. Vérifiez que le serveur (npm run server) est lancé sur le port 3001');
+                      }
+
+                      const result = await response.json();
+                      console.log('✓ Audio sauvegardé:', result.filename);
+                      
+                      setRecordedAudio(null);
+                      setIsUploading(false);
+                      goToNextStep(); // Vers 'thanks'
+                    } catch (error) {
+                      console.error('Erreur upload:', error);
+                      setUploadError(error.message);
+                      setIsUploading(false);
+                    }
+                  }
+                }}
+                disabled={isUploading}
+              >
                 <img src={GreenButton} alt="Valider la réponse" />
-                <span>Valider votre réponse</span>
+                <span>{isUploading ? 'Enregistrement...' : 'Valider votre réponse'}</span>
               </button>
-              <button type="button" className="action-button record" onClick={() => setActiveStep('speak')}>
+              <button 
+                type="button" 
+                className="action-button record" 
+                onClick={() => {
+                  setRecordedAudio(null);
+                  setUploadError(null);
+                  setActiveStep('speak');
+                }}
+                disabled={isUploading}
+              >
                 <img src={RedButton} alt="Refaire l'enregistrement" />
                 <span>Refaire l'enregistrement</span>
               </button>

@@ -1,0 +1,111 @@
+import express from 'express';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const app = express();
+const PORT = 3001;
+
+// Créer le dossier uploads s'il n'existe pas
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Configuration de multer pour les fichiers audio
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const timestamp = Date.now();
+    const filename = `recording_${timestamp}.webm`;
+    cb(null, filename);
+  }
+});
+
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB max
+});
+
+// Middleware
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'dist')));
+
+// Route pour uploader un audio
+app.post('/api/upload-audio', upload.single('audio'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Aucun fichier audio reçu' });
+    }
+
+    const { question } = req.body;
+    const audioPath = req.file.path;
+    const fileSize = req.file.size;
+
+    // Créer un fichier JSON avec les métadonnées
+    const metadata = {
+      timestamp: new Date().toISOString(),
+      filename: req.file.filename,
+      question: question || 'Pas de question',
+      fileSize: fileSize,
+      duration: null // Peut être complété si calculé côté client
+    };
+
+    const metadataPath = audioPath.replace('.webm', '.json');
+    fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+
+    console.log(`✓ Audio enregistré: ${req.file.filename} (${(fileSize / 1024).toFixed(2)}KB)`);
+    console.log(`  Question: ${metadata.question}`);
+
+    res.json({
+      success: true,
+      filename: req.file.filename,
+      filepath: audioPath,
+      fileSize: fileSize
+    });
+  } catch (error) {
+    console.error('Erreur lors du traitement:', error);
+    res.status(500).json({ error: 'Erreur serveur lors de l\'enregistrement de l\'audio' });
+  }
+});
+
+// Route pour lister les audios enregistrés
+app.get('/api/audios', (req, res) => {
+  try {
+    const files = fs.readdirSync(uploadsDir)
+      .filter(file => file.endsWith('.webm'))
+      .map(file => ({
+        filename: file,
+        path: `/uploads/${file}`,
+        created: fs.statSync(path.join(uploadsDir, file)).birthtime
+      }))
+      .sort((a, b) => b.created - a.created);
+
+    res.json({ audios: files, count: files.length });
+  } catch (error) {
+    console.error('Erreur lors de la lecture des audios:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Servir les fichiers audio
+app.use('/uploads', express.static(uploadsDir));
+
+// Fallback pour SPA (React Router)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`
+╔════════════════════════════════════════╗
+║   Mind & Market - Audio Recording      ║
+║   Serveur démarré sur port ${PORT}       ║
+║   📁 Dossier uploads: ${uploadsDir}  ║
+╚════════════════════════════════════════╝
+  `);
+});
