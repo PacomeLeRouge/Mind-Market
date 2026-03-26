@@ -25,36 +25,91 @@ export default function App() {
   const audioChunksRef = useRef([]);
   const recordingStartTimeRef = useRef(null);
 
-  useEffect(() => {
-    if (activeStep !== 'question') {
-      return undefined;
-    }
+  // --- GESTION DE LA CARTE EG STARTS (GAMEPAD) ---
+  const requestRef = useRef();
+  const prevGamepadState = useRef({ buttons: [], axes: [] });
 
+  useEffect(() => {
+    const pollGamepad = () => {
+      const gamepads = navigator.getGamepads();
+      const pad = gamepads[0]; 
+
+      if (pad) {
+        // 1. JOYSTICK (Axe 0 = Horizontal)
+        const x = pad.axes[0]; 
+        const prevX = prevGamepadState.current.axes[0] || 0;
+
+        // Seuil de 0.5 pour éviter la sensibilité excessive
+        if (x > 0.5 && prevX <= 0.5) { // Droite
+          setQuestionIndex((current) => (current + 1) % questions.length);
+        }
+        if (x < -0.5 && prevX >= -0.5) { // Gauche
+           setQuestionIndex((current) => (current - 1 + questions.length) % questions.length);
+        }
+
+        // 2. BOUTONS (K1 = Rouge, K2 = Vert)
+        const btnRedPressed = pad.buttons[0]?.pressed; // K1
+        const prevRed = prevGamepadState.current.buttons[0];
+        
+        const btnGreenPressed = pad.buttons[1]?.pressed; // K2
+        const prevGreen = prevGamepadState.current.buttons[1];
+
+        // Action Bouton ROUGE (K1) -> Enregistrement / Stop
+        if (btnRedPressed && !prevRed) {
+          const redBtnElement = document.querySelector('.action-button.record');
+          if (redBtnElement && !redBtnElement.disabled) redBtnElement.click();
+        }
+
+        // Action Bouton VERT (K2) -> Valider / Suivant
+        if (btnGreenPressed && !prevGreen) {
+          const greenBtnElement = document.querySelector('.action-button.confirm');
+          if (greenBtnElement && !greenBtnElement.disabled) greenBtnElement.click();
+        }
+
+        prevGamepadState.current = {
+          buttons: pad.buttons.map(b => b.pressed),
+          axes: [...pad.axes]
+        };
+      }
+      requestRef.current = requestAnimationFrame(pollGamepad);
+    };
+
+    requestRef.current = requestAnimationFrame(pollGamepad);
+    return () => cancelAnimationFrame(requestRef.current);
+  }, []);
+
+
+  // --- LOGIQUE DE NAVIGATION ET TIMERS ---
+  useEffect(() => {
+    if (activeStep !== 'question') return undefined;
     const interval = window.setInterval(() => {
       setQuestionIndex((current) => (current + 1) % questions.length);
     }, QUESTION_ROTATION_MS);
-
     return () => window.clearInterval(interval);
   }, [activeStep]);
 
   useEffect(() => {
-    if (activeStep !== 'thanks') {
-      return undefined;
-    }
-
+    if (activeStep !== 'thanks') return undefined;
     const timeout = window.setTimeout(() => {
       setActiveStep('question');
       setQuestionIndex(0);
     }, THANKS_RESTART_MS);
-
     return () => window.clearTimeout(timeout);
   }, [activeStep]);
 
+
+  // --- CAPTURE AUDIO (MICRO USB) ---
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioInputs = devices.filter(device => device.kind === 'audioinput');
+      const usbMic = audioInputs.find(device => device.label.toLowerCase().includes('usb')) || audioInputs[0];
+
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: usbMic ? { deviceId: { exact: usbMic.deviceId } } : true 
+      });
+
       const mediaRecorder = new MediaRecorder(stream);
-      
       audioChunksRef.current = [];
       recordingStartTimeRef.current = Date.now();
       
@@ -64,18 +119,14 @@ export default function App() {
       
       mediaRecorder.onstop = () => {
         const duration = Date.now() - recordingStartTimeRef.current;
-        
         if (duration >= MIN_RECORDING_DURATION_MS) {
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
           setRecordedAudio(audioBlob);
           setActiveStep('confirm');
         } else {
-          console.log(`Enregistrement trop court (${duration}ms < ${MIN_RECORDING_DURATION_MS}ms)`);
-          alert(`Enregistrement trop court (${(duration / 1000).toFixed(1)}s). Minimum 5 secondes requis.`);
+          alert(`Enregistrement trop court. Minimum 5 secondes.`);
           setActiveStep('speak');
         }
-        
-        // Fermer le stream du micro
         stream.getTracks().forEach(track => track.stop());
       };
       
@@ -83,8 +134,8 @@ export default function App() {
       mediaRecorderRef.current = mediaRecorder;
       setIsRecording(true);
     } catch (error) {
-      console.error('Erreur accès au micro:', error);
-      alert('Impossible d\'accéder au microphone. Vérifiez les permissions.');
+      console.error('Erreur micro:', error);
+      alert('Vérifiez que le micro USB est branché.');
     }
   };
 
@@ -93,14 +144,6 @@ export default function App() {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
     }
-  };
-
-  const currentQuestion = questions[questionIndex];
-
-  const goToNextStep = () => {
-    const currentIndex = steps.indexOf(activeStep);
-    const nextStep = steps[Math.min(currentIndex + 1, steps.length - 1)];
-    setActiveStep(nextStep);
   };
 
   const handleRecordingButtonClick = () => {
@@ -112,10 +155,7 @@ export default function App() {
     }
   };
 
-  const restartFlow = () => {
-    setActiveStep('question');
-    setQuestionIndex(0);
-  };
+  const currentQuestion = questions[questionIndex];
 
   return (
     <main className="app-shell">
@@ -126,21 +166,18 @@ export default function App() {
               <h1>Aidez un porteur de projet</h1>
               <p>en répondant à l&apos;une de ces question</p>
             </div>
-
-            <div className="question-card" role="status" aria-live="polite">
+            <div className="question-card">
               <p key={currentQuestion} className="question-text fade-in-up">{currentQuestion}</p>
             </div>
-
             <div className="screen-actions">
               <div className="hint-block compact">
-                <img className="joystick" src={Joystick} alt="Navigation entre les questions" />
-                <span>Faites défiler les questions</span>
+                <img className="joystick" src={Joystick} alt="Joystick" />
+                <span>Utilisez le joystick pour choisir</span>
               </div>
-
               <div className="button-stack">
-                <button type="button" className="action-button confirm pulse" onClick={goToNextStep}>
-                  <img src={GreenButton} alt="Valider" />
-                  <span>Validez le choix</span>
+                <button type="button" className="action-button confirm pulse" onClick={() => setActiveStep('speak')}>
+                  <img src={GreenButton} alt="Vert" />
+                  <span>Validez (Bouton Vert)</span>
                 </button>
               </div>
             </div>
@@ -150,18 +187,16 @@ export default function App() {
         {activeStep === 'speak' && (
           <section className="screen-frame screen-speak fade-in-up">
             <div className="top-copy">
-              <img className="hero-icon icon-small" src={Whisper} alt="Parlez à l'oreille" />
-              <p className="eyebrow">Parlez à l&apos;oreille</p>
+              <img className="hero-icon icon-small" src={Whisper} alt="Micro" />
+              <p className="eyebrow">Prêt à répondre ?</p>
             </div>
-
             <div className="question-card question-card--large">
               <p>{currentQuestion}</p>
             </div>
-
             <div className="button-stack">
               <button type="button" className="action-button record pulse" onClick={handleRecordingButtonClick}>
-                <img src={RedButton} alt="Parler" />
-                <span>Appuyez pour enregistrer<br />Appuyez à nouveau pour arrêter</span>
+                <img src={RedButton} alt="Rouge" />
+                <span>Enregistrer (Bouton Rouge)</span>
               </button>
             </div>
           </section>
@@ -170,27 +205,21 @@ export default function App() {
         {activeStep === 'recording' && (
           <section className="screen-frame screen-recording fade-in-up">
             <div className="top-copy">
-              <img className="hero-icon icon-small" src={Whisper} alt="Enregistrement vocal" />
-              <p className="eyebrow">Parlez à l&apos;oreille</p>
+              <img className="hero-icon icon-small" src={Whisper} alt="Enregistrement" />
+              <p className="eyebrow">On vous écoute...</p>
             </div>
-
             <div className="recording-panel">
-              <div className="waveform" aria-hidden="true">
+              <div className="waveform">
                 {recordingBars.map((bar) => (
-                  <span
-                    key={bar}
-                    className="wave-bar"
-                    style={{ animationDelay: `${bar * 0.08}s` }}
-                  />
+                  <span key={bar} className="wave-bar" style={{ animationDelay: `${bar * 0.08}s` }} />
                 ))}
               </div>
               <p>Enregistrement en cours...</p>
             </div>
-
             <div className="button-stack">
               <button type="button" className="action-button record" onClick={handleRecordingButtonClick}>
-                <img src={RedButton} alt="Finaliser" />
-                <span>Finaliser l'enregistrement</span>
+                <img src={RedButton} alt="Rouge" />
+                <span>Arrêter (Bouton Rouge)</span>
               </button>
             </div>
           </section>
@@ -199,94 +228,44 @@ export default function App() {
         {activeStep === 'confirm' && (
           <section className="screen-frame screen-confirm fade-in-up">
             <div className="top-copy top-copy--spacious">
-              <h2>Confirmer votre réponse</h2>
-              <p>Votre message sera envoyé au porteur de projet.</p>
-              {uploadError && (
-                <div style={{ 
-                  color: '#d32f2f', 
-                  marginTop: '10px', 
-                  padding: '10px',
-                  backgroundColor: 'rgba(211, 47, 47, 0.1)',
-                  borderRadius: '4px'
-                }}>
-                  Erreur: {uploadError}
-                </div>
-              )}
+              <h2>Confirmer l'envoi ?</h2>
+              <p>Appuyez sur Vert pour envoyer ou Rouge pour recommencer.</p>
+              {uploadError && <div className="error-msg">{uploadError}</div>}
             </div>
-
             <div className="button-stack button-stack--split">
               <button 
                 type="button" 
                 className="action-button confirm pulse" 
                 onClick={async () => {
-                  if (recordedAudio) {
-                    setIsUploading(true);
-                    setUploadError(null);
-                    
-                    try {
-                      const formData = new FormData();
-                      formData.append('audio', recordedAudio, 'recording.webm');
-                      formData.append('question', currentQuestion);
-                      
-                      const response = await fetch('/api/upload-audio', {
-                        method: 'POST',
-                        body: formData
-                      });
-
-                      if (!response.ok) {
-                        const contentType = response.headers.get('content-type');
-                        let errorMsg = `Erreur serveur (${response.status})`;
-                        
-                        try {
-                          if (contentType?.includes('application/json')) {
-                            const error = await response.json();
-                            errorMsg = error.error || errorMsg;
-                          } else {
-                            const text = await response.text();
-                            errorMsg = text || errorMsg;
-                          }
-                        } catch (e) {
-                          console.error('Impossible de parser la réponse erreur:', e);
-                        }
-                        
-                        throw new Error(errorMsg);
-                      }
-
-                      const contentType = response.headers.get('content-type');
-                      if (!contentType?.includes('application/json')) {
-                        throw new Error('Le serveur n\'a pas répondu avec du JSON. Vérifiez que le serveur (npm run server) est lancé sur le port 3001');
-                      }
-
-                      const result = await response.json();
-                      console.log('✓ Audio sauvegardé:', result.filename);
-                      
-                      setRecordedAudio(null);
-                      setIsUploading(false);
-                      goToNextStep(); // Vers 'thanks'
-                    } catch (error) {
-                      console.error('Erreur upload:', error);
-                      setUploadError(error.message);
-                      setIsUploading(false);
-                    }
+                  if (!recordedAudio) return;
+                  setIsUploading(true);
+                  try {
+                    const formData = new FormData();
+                    formData.append('audio', recordedAudio, 'recording.webm');
+                    formData.append('question', currentQuestion);
+                    const res = await fetch('/api/upload-audio', { method: 'POST', body: formData });
+                    if (!res.ok) throw new Error("Erreur serveur");
+                    setRecordedAudio(null);
+                    setActiveStep('thanks');
+                  } catch (e) {
+                    setUploadError(e.message);
+                  } finally {
+                    setIsUploading(false);
                   }
                 }}
                 disabled={isUploading}
               >
-                <img src={GreenButton} alt="Valider la réponse" />
-                <span>{isUploading ? 'Enregistrement...' : 'Valider votre réponse'}</span>
+                <img src={GreenButton} alt="Vert" />
+                <span>{isUploading ? 'Envoi...' : 'Envoyer (Vert)'}</span>
               </button>
               <button 
                 type="button" 
                 className="action-button record" 
-                onClick={() => {
-                  setRecordedAudio(null);
-                  setUploadError(null);
-                  setActiveStep('speak');
-                }}
+                onClick={() => { setRecordedAudio(null); setActiveStep('speak'); }}
                 disabled={isUploading}
               >
-                <img src={RedButton} alt="Refaire l'enregistrement" />
-                <span>Refaire l'enregistrement</span>
+                <img src={RedButton} alt="Rouge" />
+                <span>Refaire (Rouge)</span>
               </button>
             </div>
           </section>
@@ -296,19 +275,12 @@ export default function App() {
           <section className="screen-frame screen-thanks fade-in-up">
             <div className="top-copy thanks-copy">
               <img className="hero-icon icon-medium" src={Hand} alt="Merci" />
-              <h2>Merci</h2>
-              <p>
-                Votre réponse a été enregistrée. Elle aidera à améliorer le projet.
-              </p>
+              <h2>Merci !</h2>
+              <p>Votre réponse a bien été transmise.</p>
             </div>
-
             <div className="partner-block">
-              <span>Dispositif réalisé par</span>
               <img src={OpenHub} alt="OpenHub" className="openhub" />
-              <p className="partner-note">
-                La plateforme technologique de l&apos;UCLouvain, qui accélère l&apos;innovation pour les entreprises et les porteurs de projet.
-              </p>
-              <button type="button" className="ghost-link" onClick={restartFlow}>
+              <button type="button" className="ghost-link" onClick={() => setActiveStep('question')}>
                 Recommencer
               </button>
             </div>
