@@ -1,141 +1,78 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { GreenButton, Hand, Joystick, OpenHub, RedButton, Whisper } from './svg/index.js';
 
-const questions = [
+// --- CONFIGURATION ---
+const KEYS = {
+  GREEN: 'Enter',          
+  RED: 'Escape',           
+  JOY_UP: 'ArrowDown',     // Câblage inversé physiquement
+  JOY_DOWN: 'ArrowUp'      // Câblage inversé physiquement
+};
+
+const QUESTIONS = [
   'Pensez-vous que les brosses à dents électriques sont plus durables que les brosses à dents manuelles ?',
   'Pour vous, quel produit du quotidien pourrait être repensé pour durer plus longtemps ?',
   'Quelle innovation simple améliorerait le recyclage ou la réutilisation dans votre quotidien ?'
 ];
 
-const steps = ['question', 'speak', 'recording', 'confirm', 'thanks'];
-const recordingBars = Array.from({ length: 15 }, (_, index) => index);
-const QUESTION_ROTATION_MS = 5000;
+const STEPS = ['question', 'speak', 'recording', 'confirm', 'thanks'];
+const QUESTION_ROTATION_MS = 8000;
 const THANKS_RESTART_MS = 10000;
-const MIN_RECORDING_DURATION_MS = 5000;
+const MIN_RECORDING_MS = 4000;
 
 export default function App() {
-  const [activeStep, setActiveStep] = useState(steps[0]);
+  const [activeStep, setActiveStep] = useState('question');
   const [questionIndex, setQuestionIndex] = useState(0);
+  const [slideDir, setSlideDir] = useState('next'); // 'next' ou 'prev' pour l'animation
   const [isRecording, setIsRecording] = useState(false);
   const [recordedAudio, setRecordedAudio] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
-  
+
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const recordingStartTimeRef = useRef(null);
 
-  // --- GESTION DE LA CARTE EG STARTS (GAMEPAD) ---
-  const requestRef = useRef();
-  const prevGamepadState = useRef({ buttons: [], axes: [] });
+  const goToNextStep = useCallback(() => {
+    const currentIndex = STEPS.indexOf(activeStep);
+    const nextStep = STEPS[Math.min(currentIndex + 1, STEPS.length - 1)];
+    setActiveStep(nextStep);
+  }, [activeStep]);
 
-  useEffect(() => {
-    const pollGamepad = () => {
-      const gamepads = navigator.getGamepads();
-      const pad = gamepads[0]; 
-
-      if (pad) {
-        // 1. JOYSTICK (Axe 0 = Horizontal)
-        const x = pad.axes[0]; 
-        const prevX = prevGamepadState.current.axes[0] || 0;
-
-        // Seuil de 0.5 pour éviter la sensibilité excessive
-        if (x > 0.5 && prevX <= 0.5) { // Droite
-          setQuestionIndex((current) => (current + 1) % questions.length);
-        }
-        if (x < -0.5 && prevX >= -0.5) { // Gauche
-           setQuestionIndex((current) => (current - 1 + questions.length) % questions.length);
-        }
-
-        // 2. BOUTONS (K1 = Rouge, K2 = Vert)
-        const btnRedPressed = pad.buttons[0]?.pressed; // K1
-        const prevRed = prevGamepadState.current.buttons[0];
-        
-        const btnGreenPressed = pad.buttons[1]?.pressed; // K2
-        const prevGreen = prevGamepadState.current.buttons[1];
-
-        // Action Bouton ROUGE (K1) -> Enregistrement / Stop
-        if (btnRedPressed && !prevRed) {
-          const redBtnElement = document.querySelector('.action-button.record');
-          if (redBtnElement && !redBtnElement.disabled) redBtnElement.click();
-        }
-
-        // Action Bouton VERT (K2) -> Valider / Suivant
-        if (btnGreenPressed && !prevGreen) {
-          const greenBtnElement = document.querySelector('.action-button.confirm');
-          if (greenBtnElement && !greenBtnElement.disabled) greenBtnElement.click();
-        }
-
-        prevGamepadState.current = {
-          buttons: pad.buttons.map(b => b.pressed),
-          axes: [...pad.axes]
-        };
-      }
-      requestRef.current = requestAnimationFrame(pollGamepad);
-    };
-
-    requestRef.current = requestAnimationFrame(pollGamepad);
-    return () => cancelAnimationFrame(requestRef.current);
+  const restartFlow = useCallback(() => {
+    setActiveStep('question');
+    setQuestionIndex(0);
+    setSlideDir('next');
+    setRecordedAudio(null);
+    setUploadError(null);
   }, []);
 
-
-  // --- LOGIQUE DE NAVIGATION ET TIMERS ---
-  useEffect(() => {
-    if (activeStep !== 'question') return undefined;
-    const interval = window.setInterval(() => {
-      setQuestionIndex((current) => (current + 1) % questions.length);
-    }, QUESTION_ROTATION_MS);
-    return () => window.clearInterval(interval);
-  }, [activeStep]);
-
-  useEffect(() => {
-    if (activeStep !== 'thanks') return undefined;
-    const timeout = window.setTimeout(() => {
-      setActiveStep('question');
-      setQuestionIndex(0);
-    }, THANKS_RESTART_MS);
-    return () => window.clearTimeout(timeout);
-  }, [activeStep]);
-
-
-  // --- CAPTURE AUDIO (MICRO USB) ---
   const startRecording = async () => {
     try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const audioInputs = devices.filter(device => device.kind === 'audioinput');
-      const usbMic = audioInputs.find(device => device.label.toLowerCase().includes('usb')) || audioInputs[0];
-
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: usbMic ? { deviceId: { exact: usbMic.deviceId } } : true 
-      });
-
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
       audioChunksRef.current = [];
       recordingStartTimeRef.current = Date.now();
-      
-      mediaRecorder.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
-      };
-      
+
+      mediaRecorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
       mediaRecorder.onstop = () => {
         const duration = Date.now() - recordingStartTimeRef.current;
-        if (duration >= MIN_RECORDING_DURATION_MS) {
+        if (duration >= MIN_RECORDING_MS) {
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
           setRecordedAudio(audioBlob);
           setActiveStep('confirm');
         } else {
-          alert(`Enregistrement trop court. Minimum 5 secondes.`);
           setActiveStep('speak');
         }
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach(t => t.stop());
       };
-      
+
       mediaRecorder.start();
       mediaRecorderRef.current = mediaRecorder;
       setIsRecording(true);
-    } catch (error) {
-      console.error('Erreur micro:', error);
-      alert('Vérifiez que le micro USB est branché.');
+      setActiveStep('recording');
+    } catch (err) {
+      console.error("Micro non accessible:", err);
     }
   };
 
@@ -146,40 +83,112 @@ export default function App() {
     }
   };
 
-  const handleRecordingButtonClick = () => {
-    if (activeStep === 'speak') {
-      startRecording();
-      setActiveStep('recording');
-    } else if (activeStep === 'recording') {
-      stopRecording();
+  const handleUpload = async () => {
+    if (!recordedAudio || isUploading) return;
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append('audio', recordedAudio, 'recording.webm');
+    formData.append('question', QUESTIONS[questionIndex]);
+
+    try {
+      const response = await fetch('/api/upload-audio', { method: 'POST', body: formData });
+      if (!response.ok) throw new Error();
+      goToNextStep();
+    } catch (err) {
+      setUploadError("Échec de l'envoi.");
+    } finally {
+      setIsUploading(false);
     }
   };
 
-  const currentQuestion = questions[questionIndex];
+  const handleActionGreen = useCallback(() => {
+    if (activeStep === 'question') goToNextStep();
+    else if (activeStep === 'confirm') handleUpload();
+    else if (activeStep === 'thanks') restartFlow();
+  }, [activeStep, goToNextStep, handleUpload, restartFlow]);
+
+  const handleActionRed = useCallback(() => {
+    if (activeStep === 'speak') startRecording();
+    else if (activeStep === 'recording') stopRecording();
+    else if (activeStep === 'confirm') {
+      setRecordedAudio(null);
+      setActiveStep('speak');
+    }
+  }, [activeStep, isRecording]);
+
+  const handleJoystick = useCallback((direction) => {
+    if (activeStep === 'question') {
+      setSlideDir(direction); // On enregistre le sens de l'animation
+      setQuestionIndex(prev => {
+        if (direction === 'next') return (prev + 1) % QUESTIONS.length;
+        return (prev - 1 + QUESTIONS.length) % QUESTIONS.length;
+      });
+    }
+  }, [activeStep]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === KEYS.GREEN) handleActionGreen();
+      if (e.key === KEYS.RED) handleActionRed();
+      if (e.key === KEYS.JOY_DOWN) handleJoystick('next'); 
+      if (e.key === KEYS.JOY_UP) handleJoystick('prev');
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleActionGreen, handleActionRed, handleJoystick]);
+
+  useEffect(() => {
+    let timer;
+    if (activeStep === 'question') {
+      timer = setInterval(() => handleJoystick('next'), QUESTION_ROTATION_MS);
+    } else if (activeStep === 'thanks') {
+      timer = setTimeout(restartFlow, THANKS_RESTART_MS);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+      if (timer) clearTimeout(timer);
+    };
+  }, [activeStep, questionIndex, handleJoystick, restartFlow]);
 
   return (
     <main className="app-shell">
+      {/* On injecte les animations de slide directement ici pour être sûr qu'elles fonctionnent */}
+      <style>{`
+        @keyframes slideInNext {
+          0% { transform: translateX(100px); opacity: 0; }
+          100% { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideInPrev {
+          0% { transform: translateX(-100px); opacity: 0; }
+          100% { transform: translateX(0); opacity: 1; }
+        }
+        .slide-next { animation: slideInNext 0.5s cubic-bezier(0.25, 0.8, 0.25, 1) forwards; }
+        .slide-prev { animation: slideInPrev 0.5s cubic-bezier(0.25, 0.8, 0.25, 1) forwards; }
+      `}</style>
+
       <div className="device-frame">
+
         {activeStep === 'question' && (
           <section className="screen-frame screen-question fade-in-up">
             <div className="top-copy intro-copy">
               <h1>Aidez un porteur de projet</h1>
-              <p>en répondant à l&apos;une de ces question</p>
+              <p>en répondant à l'une de ces questions</p>
             </div>
-            <div className="question-card">
-              <p key={currentQuestion} className="question-text fade-in-up">{currentQuestion}</p>
+
+            {/* C'est ici que la magie opère : la classe change selon la direction du joystick */}
+            <div className={`question-card slide-${slideDir}`} key={questionIndex}>
+              <p className="question-text">{QUESTIONS[questionIndex]}</p>
             </div>
+
             <div className="screen-actions">
               <div className="hint-block compact">
-                <img className="joystick" src={Joystick} alt="Joystick" />
-                <span>Utilisez le joystick pour choisir</span>
+                <img src={Joystick} className="joystick" alt="Joystick" />
+                <span>Joystick pour choisir</span>
               </div>
-              <div className="button-stack">
-                <button type="button" className="action-button confirm pulse" onClick={() => setActiveStep('speak')}>
-                  <img src={GreenButton} alt="Vert" />
-                  <span>Validez (Bouton Vert)</span>
-                </button>
-              </div>
+              <button className="action-button confirm pulse" onClick={handleActionGreen}>
+                <img src={GreenButton} alt="Vert" />
+                <span>Validez avec le bouton VERT</span>
+              </button>
             </div>
           </section>
         )}
@@ -187,41 +196,35 @@ export default function App() {
         {activeStep === 'speak' && (
           <section className="screen-frame screen-speak fade-in-up">
             <div className="top-copy">
-              <img className="hero-icon icon-small" src={Whisper} alt="Micro" />
+              <img className="hero-icon icon-small" src={Whisper} alt="Whisper" />
               <p className="eyebrow">Prêt à répondre ?</p>
             </div>
             <div className="question-card question-card--large">
-              <p>{currentQuestion}</p>
+              <p>{QUESTIONS[questionIndex]}</p>
             </div>
-            <div className="button-stack">
-              <button type="button" className="action-button record pulse" onClick={handleRecordingButtonClick}>
-                <img src={RedButton} alt="Rouge" />
-                <span>Enregistrer (Bouton Rouge)</span>
-              </button>
-            </div>
+            <button className="action-button record pulse" onClick={handleActionRed}>
+              <img src={RedButton} alt="Rouge" />
+              <span>Bouton ROUGE pour enregistrer</span>
+            </button>
           </section>
         )}
 
         {activeStep === 'recording' && (
           <section className="screen-frame screen-recording fade-in-up">
             <div className="top-copy">
-              <img className="hero-icon icon-small" src={Whisper} alt="Enregistrement" />
-              <p className="eyebrow">On vous écoute...</p>
+              <img className="hero-icon icon-small" src={Whisper} alt="Recording" />
+              <p className="eyebrow">Enregistrement...</p>
             </div>
             <div className="recording-panel">
-              <div className="waveform">
-                {recordingBars.map((bar) => (
-                  <span key={bar} className="wave-bar" style={{ animationDelay: `${bar * 0.08}s` }} />
-                ))}
-              </div>
-              <p>Enregistrement en cours...</p>
+               <div className="waveform">
+                 {[...Array(15)].map((_, i) => <span key={i} className="wave-bar" style={{animationDelay: `${i*0.1}s`}} />)}
+               </div>
+               <p>Parlez maintenant !</p>
             </div>
-            <div className="button-stack">
-              <button type="button" className="action-button record" onClick={handleRecordingButtonClick}>
-                <img src={RedButton} alt="Rouge" />
-                <span>Arrêter (Bouton Rouge)</span>
-              </button>
-            </div>
+            <button className="action-button record" onClick={handleActionRed}>
+              <img src={RedButton} alt="Rouge" />
+              <span>Bouton ROUGE pour FINIR</span>
+            </button>
           </section>
         )}
 
@@ -229,43 +232,17 @@ export default function App() {
           <section className="screen-frame screen-confirm fade-in-up">
             <div className="top-copy top-copy--spacious">
               <h2>Confirmer l'envoi ?</h2>
-              <p>Appuyez sur Vert pour envoyer ou Rouge pour recommencer.</p>
-              {uploadError && <div className="error-msg">{uploadError}</div>}
+              <p>Votre message va être transmis au porteur de projet.</p>
+              {uploadError && <p className="error-msg">{uploadError}</p>}
             </div>
             <div className="button-stack button-stack--split">
-              <button 
-                type="button" 
-                className="action-button confirm pulse" 
-                onClick={async () => {
-                  if (!recordedAudio) return;
-                  setIsUploading(true);
-                  try {
-                    const formData = new FormData();
-                    formData.append('audio', recordedAudio, 'recording.webm');
-                    formData.append('question', currentQuestion);
-                    const res = await fetch('/api/upload-audio', { method: 'POST', body: formData });
-                    if (!res.ok) throw new Error("Erreur serveur");
-                    setRecordedAudio(null);
-                    setActiveStep('thanks');
-                  } catch (e) {
-                    setUploadError(e.message);
-                  } finally {
-                    setIsUploading(false);
-                  }
-                }}
-                disabled={isUploading}
-              >
+              <button className="action-button confirm" onClick={handleActionGreen} disabled={isUploading}>
                 <img src={GreenButton} alt="Vert" />
-                <span>{isUploading ? 'Envoi...' : 'Envoyer (Vert)'}</span>
+                <span>{isUploading ? 'Envoi...' : 'VERT : Envoyer'}</span>
               </button>
-              <button 
-                type="button" 
-                className="action-button record" 
-                onClick={() => { setRecordedAudio(null); setActiveStep('speak'); }}
-                disabled={isUploading}
-              >
+              <button className="action-button record" onClick={handleActionRed} disabled={isUploading}>
                 <img src={RedButton} alt="Rouge" />
-                <span>Refaire (Rouge)</span>
+                <span>ROUGE : Recommencer</span>
               </button>
             </div>
           </section>
@@ -276,16 +253,15 @@ export default function App() {
             <div className="top-copy thanks-copy">
               <img className="hero-icon icon-medium" src={Hand} alt="Merci" />
               <h2>Merci !</h2>
-              <p>Votre réponse a bien été transmise.</p>
+              <p>Votre voix a été enregistrée avec succès.</p>
             </div>
             <div className="partner-block">
               <img src={OpenHub} alt="OpenHub" className="openhub" />
-              <button type="button" className="ghost-link" onClick={() => setActiveStep('question')}>
-                Recommencer
-              </button>
+              <p className="partner-note">Dispositif réalisé par l'UCLouvain OpenHub.</p>
             </div>
           </section>
         )}
+
       </div>
     </main>
   );
