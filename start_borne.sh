@@ -1,6 +1,14 @@
 #!/bin/bash
 
-echo "Démarrage de la borne Mind & Market..."
+echo "Préparation du système..."
+
+# 1. Gestion des permissions (nécessite sudo)
+sudo modprobe uinput
+sudo chmod 666 /dev/uinput
+
+# 2. Nettoyage de PM2 pour éviter les doublons
+echo "Nettoyage et démarrage des services..."
+pm2 delete all 2>/dev/null
 
 # 1. On se place dans le bon dossier
 cd ~/Mind-Market
