@@ -3,8 +3,8 @@ import { GreenButton, Hand, Joystick, OpenHub, RedButton, Whisper } from './svg/
 
 // --- CONFIGURATION ---
 const KEYS = {
-  GREEN: 'Enter',          
-  RED: 'Escape',           
+  GREEN: 'Enter',
+  RED: 'Escape',
   JOY_UP: 'ArrowDown',     // Câblage inversé physiquement
   JOY_DOWN: 'ArrowUp'      // Câblage inversé physiquement
 };
@@ -23,7 +23,7 @@ const MIN_RECORDING_MS = 4000;
 export default function App() {
   const [activeStep, setActiveStep] = useState('question');
   const [questionIndex, setQuestionIndex] = useState(0);
-  const [slideDir, setSlideDir] = useState('next'); // 'next' ou 'prev' pour l'animation
+  const [slideDir, setSlideDir] = useState('next'); 
   const [isRecording, setIsRecording] = useState(false);
   const [recordedAudio, setRecordedAudio] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -47,9 +47,18 @@ export default function App() {
     setUploadError(null);
   }, []);
 
+  // --- LOGIQUE AUDIO (CORRIGÉE) ---
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Les contraintes audio sont placées ICI, dans la fonction async
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        } 
+      });
+
       const mediaRecorder = new MediaRecorder(stream);
       audioChunksRef.current = [];
       recordingStartTimeRef.current = Date.now();
@@ -73,6 +82,7 @@ export default function App() {
       setActiveStep('recording');
     } catch (err) {
       console.error("Micro non accessible:", err);
+      alert("Erreur micro : Vérifiez les branchements.");
     }
   };
 
@@ -118,7 +128,7 @@ export default function App() {
 
   const handleJoystick = useCallback((direction) => {
     if (activeStep === 'question') {
-      setSlideDir(direction); // On enregistre le sens de l'animation
+      setSlideDir(direction); 
       setQuestionIndex(prev => {
         if (direction === 'next') return (prev + 1) % QUESTIONS.length;
         return (prev - 1 + QUESTIONS.length) % QUESTIONS.length;
@@ -130,7 +140,7 @@ export default function App() {
     const onKeyDown = (e) => {
       if (e.key === KEYS.GREEN) handleActionGreen();
       if (e.key === KEYS.RED) handleActionRed();
-      if (e.key === KEYS.JOY_DOWN) handleJoystick('next'); 
+      if (e.key === KEYS.JOY_DOWN) handleJoystick('next');
       if (e.key === KEYS.JOY_UP) handleJoystick('prev');
     };
     window.addEventListener('keydown', onKeyDown);
@@ -152,7 +162,6 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      {/* On injecte les animations de slide directement ici pour être sûr qu'elles fonctionnent */}
       <style>{`
         @keyframes slideInNext {
           0% { transform: translateX(100px); opacity: 0; }
@@ -167,19 +176,15 @@ export default function App() {
       `}</style>
 
       <div className="device-frame">
-
         {activeStep === 'question' && (
           <section className="screen-frame screen-question fade-in-up">
             <div className="top-copy intro-copy">
               <h1>Aidez un porteur de projet</h1>
               <p>en répondant à l'une de ces questions</p>
             </div>
-
-            {/* C'est ici que la magie opère : la classe change selon la direction du joystick */}
             <div className={`question-card slide-${slideDir}`} key={questionIndex}>
               <p className="question-text">{QUESTIONS[questionIndex]}</p>
             </div>
-
             <div className="screen-actions">
               <div className="hint-block compact">
                 <img src={Joystick} className="joystick" alt="Joystick" />
@@ -261,7 +266,6 @@ export default function App() {
             </div>
           </section>
         )}
-
       </div>
     </main>
   );

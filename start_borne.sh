@@ -6,6 +6,9 @@ echo "Préparation du système..."
 sudo modprobe uinput
 sudo chmod 666 /dev/uinput
 
+pulseaudio --start --exit-idle-time=-1
+sleep 2
+
 # 2. Nettoyage de PM2 pour éviter les doublons
 echo "Nettoyage et démarrage des services..."
 pm2 delete all 2>/dev/null
@@ -25,5 +28,5 @@ pm2 save
 sleep 2
 
 # 5. On lance l'interface graphique (Chromium en mode Kiosk)
-echo "🖥️ancement de l'affichage..."
+echo "🖥Lancement de l'affichage..."
 sudo xinit ./kiosk.sh -- :0
