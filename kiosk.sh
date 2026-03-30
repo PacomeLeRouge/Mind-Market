@@ -1,23 +1,28 @@
 #!/bin/bash
 
-# 1. On lance le gestionnaire de fenêtres en arrière-plan
-openbox-session &
+# 1. On lance openbox en arrière-plan (indispensable !)
+openbox &
+
+# 2. On attend une fraction de seconde que le gestionnaire soit prêt
 sleep 2
 
-# 2. On lance Chromium avec TOUTES les options nécessaires
+# Force la création d'un bus de session pour éviter le crash D-Bus
+export $(dbus-launch)
+
+# 3. Lancement de Chromium version "Blindée"
+# On ajoute --disable-features=SharedArrayBuffer pour éviter certains crashs ARM
+# On ajoute --disable-gpu-compositing pour stabiliser l'affichage
 chromium \
   --app=http://localhost:3001 \
   --kiosk \
   --no-sandbox \
   --window-size=1920,1080 \
-  --no-first-run \
-  --disable-infobars \
-  --disable-gpu \
-  --disable-software-rasterizer \
-  --disable-dev-shm-usage \
   --user-data-dir=/home/rock/.config/chromium-kiosk \
   --use-fake-ui-for-media-stream \
   --autoplay-policy=no-user-gesture-required \
-  --disable-features=WebRtcHideLocalIpsWithMdns \
-  --enable-features=WebRtcAllowInputVolumeAdjustment \
-  --remote-debugging-port=9222
+  --disable-gpu \
+  --disable-software-rasterizer \
+  --disable-dev-shm-usage \
+  --disable-features=SharedArrayBuffer \
+  --disable-gpu-compositing \
+  --no-first-run

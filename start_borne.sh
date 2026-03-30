@@ -1,32 +1,23 @@
 #!/bin/bash
 
 echo "Préparation du système..."
-
-# 1. Gestion des permissions (nécessite sudo)
 sudo modprobe uinput
 sudo chmod 666 /dev/uinput
 
+# On force le démarrage du son pour l'utilisateur
 pulseaudio --start --exit-idle-time=-1
-sleep 2
 
-# 2. Nettoyage de PM2 pour éviter les doublons
-echo "Nettoyage et démarrage des services..."
+echo "Nettoyage PM2..."
 pm2 delete all 2>/dev/null
 
-# 1. On se place dans le bon dossier
 cd ~/Mind-Market
+pm2 start server.js --name "mind-market"
+pm2 start python3 -- bridge.py --name "buttons-bridge"
+pm2 save --force
 
-# 2. On s'assure que les services PM2 tournent (Serveur Node + Bridge Python)
-echo "Vérification du serveur et du pont joystick..."
-pm2 start server.js --name "mind-market" 2>/dev/null || pm2 restart mind-market
-pm2 start python3 --name "buttons-bridge" -- bridge.py 2>/dev/null || pm2 restart buttons-bridge
+sleep 1
 
-# 3. On sauvegarde la config PM2 (pour le redémarrage automatique du RockPi)
-pm2 save
-
-# 4. On attend 2 petites secondes pour que le serveur soit bien chaud
-sleep 2
-
-# 5. On lance l'interface graphique (Chromium en mode Kiosk)
-echo "🖥Lancement de l'affichage..."
-sudo xinit ./kiosk.sh -- :0
+echo "ancement de l'affichage..."
+# On utilise une méthode plus propre pour D-Bus
+export $(dbus-launch)
+xinit ./kiosk.sh -- :0
