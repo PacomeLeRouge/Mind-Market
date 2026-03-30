@@ -1,6 +1,9 @@
 #!/bin/bash
 
 echo "Préparation du système..."
+# Désacactive veille
+sudo setterm -blank 0 -powersave off -powerdown 0
+
 sudo modprobe uinput
 sudo chmod 666 /dev/uinput
 

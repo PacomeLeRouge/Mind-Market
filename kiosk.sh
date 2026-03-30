@@ -1,5 +1,13 @@
 #!/bin/bash
 
+#  Empêcher l'écran de s'éteindre
+xset s off          # Désactive le screensaver
+xset s noblank      # Empêche le noir complet
+xset -dpms          # Désactive la gestion d'énergie (Energy Star)
+
+#  Cacher le curseur de la souris après 1 seconde d'inactivité
+unclutter -idle 1 -root &
+
 # 1. On lance openbox en arrière-plan (indispensable !)
 openbox &
 
