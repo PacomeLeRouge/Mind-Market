@@ -42,30 +42,42 @@ app.post('/api/upload-audio', upload.single('audio'), (req, res) => {
       return res.status(400).json({ error: 'Aucun fichier audio reçu' });
     }
 
-    const { question } = req.body;
-    const audioPath = req.file.path;
-    const fileSize = req.file.size;
+    // 1. On récupère les métadonnées envoyées par React
+    const { questionId, authorId, questionText } = req.body;
+    const timestamp = Date.now();
 
-    // Créer un fichier JSON avec les métadonnées
+    // 2. On crée un super nom de fichier avec les IDs !
+    const qId = questionId || 'no_qId';
+    const aId = authorId || 'no_aId';
+    const newBaseName = `author-${aId}_question-${qId}_${timestamp}`;
+    
+    const newAudioPath = path.join(uploadsDir, `${newBaseName}.webm`);
+    const metadataPath = path.join(uploadsDir, `${newBaseName}.json`);
+
+    // 3. On renomme le fichier généré par Multer avec notre nouveau nom
+    fs.renameSync(req.file.path, newAudioPath);
+
+    // 4. Créer un fichier JSON ultra-complet
     const metadata = {
       timestamp: new Date().toISOString(),
-      filename: req.file.filename,
-      question: question || 'Pas de question',
-      fileSize: fileSize,
-      duration: null // Peut être complété si calculé côté client
+      filename: `${newBaseName}.webm`,
+      questionId: qId,
+      authorId: aId,
+      questionText: questionText || 'Pas de question',
+      fileSize: req.file.size,
+      duration: null
     };
 
-    const metadataPath = audioPath.replace('.webm', '.json');
     fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
 
-    console.log(`✓ Audio enregistré: ${req.file.filename} (${(fileSize / 1024).toFixed(2)}KB)`);
-    console.log(`  Question: ${metadata.question}`);
+    console.log(`✓ Audio enregistré: ${metadata.filename} (${(req.file.size / 1024).toFixed(2)}KB)`);
+    console.log(`  Auteur: ${aId} | Question: ${qId}`);
 
     res.json({
       success: true,
-      filename: req.file.filename,
-      filepath: audioPath,
-      fileSize: fileSize
+      filename: metadata.filename,
+      filepath: newAudioPath,
+      fileSize: req.file.size
     });
   } catch (error) {
     console.error('Erreur lors du traitement:', error);

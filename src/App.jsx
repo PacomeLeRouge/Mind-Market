@@ -10,9 +10,21 @@ const KEYS = {
 };
 
 const QUESTIONS = [
-  'Pensez-vous que les brosses à dents électriques sont plus durables que les brosses à dents manuelles ?',
-  'Pour vous, quel produit du quotidien pourrait être repensé pour durer plus longtemps ?',
-  'Quelle innovation simple améliorerait le recyclage ou la réutilisation dans votre quotidien ?'
+  { 
+    id: 'q_001', 
+    authorId: 'auth_101', 
+    text: 'Pensez-vous que les brosses à dents électriques sont plus durables que les brosses à dents manuelles ?' 
+  },
+  { 
+    id: 'q_002', 
+    authorId: 'auth_102', 
+    text: 'Pour vous, quel produit du quotidien pourrait être repensé pour durer plus longtemps ?' 
+  },
+  { 
+    id: 'q_003', 
+    authorId: 'auth_101', 
+    text: 'Quelle innovation simple améliorerait le recyclage ou la réutilisation dans votre quotidien ?' 
+  }
 ];
 
 const STEPS = ['question', 'speak', 'recording', 'confirm', 'thanks'];
@@ -99,8 +111,13 @@ export default function App() {
     if (!recordedAudio || isUploading) return;
     setIsUploading(true);
     const formData = new FormData();
+    
+    // On attache les IDs et le texte AVANT le fichier
+    formData.append('questionId', QUESTIONS[questionIndex].id);
+    formData.append('authorId', QUESTIONS[questionIndex].authorId);
+    formData.append('questionText', QUESTIONS[questionIndex].text);
+    
     formData.append('audio', recordedAudio, 'recording.webm');
-    formData.append('question', QUESTIONS[questionIndex]);
 
     try {
       const response = await fetch('/api/upload-audio', { method: 'POST', body: formData });
@@ -185,7 +202,7 @@ export default function App() {
               <p>en répondant à l'une de ces questions</p>
             </div>
             <div className={`question-card slide-${slideDir}`} key={questionIndex}>
-              <p className="question-text">{QUESTIONS[questionIndex]}</p>
+              <p className="question-text">{QUESTIONS[questionIndex].text}</p>
             </div>
             <div className="screen-actions">
               <div className="hint-block compact">
@@ -207,7 +224,7 @@ export default function App() {
               <p className="eyebrow">Prêt à répondre ?</p>
             </div>
             <div className="question-card question-card--large">
-              <p>{QUESTIONS[questionIndex]}</p>
+              <p>{QUESTIONS[questionIndex].text}</p>
             </div>
             <button className="action-button record pulse" onClick={handleActionRed}>
               <img src={RedButton} alt="Rouge" />
