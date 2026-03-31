@@ -1,74 +1,95 @@
 import evdev
 from evdev import ecodes, UInput
 import time
+import subprocess
+import select
 
-# On autorise le clavier virtuel à utiliser Entrée, Echap et les Flèches
+# --- CONFIGURATION ROTATION ---
+SCREEN_NAME = "HDMI-1"
+HOLD_DELAY = 5.0
+current_rotation = "normal"
+
+# On ajoute KEY_LEFT/RIGHT au cas où ton React en ait besoin un jour
 cap = {
-    ecodes.EV_KEY: [ecodes.KEY_ENTER, ecodes.KEY_ESC, ecodes.KEY_UP, ecodes.KEY_DOWN]
+    ecodes.EV_KEY: [ecodes.KEY_ENTER, ecodes.KEY_ESC, ecodes.KEY_UP, ecodes.KEY_DOWN, ecodes.KEY_LEFT, ecodes.KEY_RIGHT]
 }
 ui = UInput(cap)
 
+def toggle_rotation():
+    global current_rotation
+    new_rot = "inverted" if current_rotation == "normal" else "normal"
+    print(f"🔄 Commande de rotation : {new_rot}")
+    try:
+        cmd = f"DISPLAY=:0 xrandr --output {SCREEN_NAME} --rotate {new_rot}"
+        subprocess.run(cmd, shell=True, check=True)
+        current_rotation = new_rot
+    except Exception as e:
+        print(f"❌ Erreur xrandr : {e}")
+
 def run_bridge():
-    print("Recherche du Joystick DragonRise...")
+    print("🚀 Bridge lancé avec Double-Mapping des axes...")
     while True:
         try:
             devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
-            joystick = None
-            for d in devices:
-                if "DragonRise" in d.name or "Generic" in d.name:
-                    joystick = d
-                    break
+            joystick = next((d for d in devices if "DragonRise" in d.name or "Generic" in d.name), None)
 
             if not joystick:
-                time.sleep(5)
-                continue
+                time.sleep(5); continue
 
-            print(f"Connecté à : {joystick.name}")
+            print(f"✅ Connecté à : {joystick.name}")
             
-            # Variable pour mémoriser la position du joystick et ne pas spammer
             last_x = 0
+            last_y = 0
+            start_time_up = None
+            rotation_triggered = False
 
-            for event in joystick.read_loop():
-                # 1. GESTION DES BOUTONS (Inversés ici !)
-                if event.type == ecodes.EV_KEY and event.value == 1:
-                    if event.code == 288: # Bouton Physique 1
-                        # INVERSION : on envoie ESC (Rouge) au lieu de ENTER (Vert)
-                        ui.write(ecodes.EV_KEY, ecodes.KEY_ESC, 1)
-                        ui.write(ecodes.EV_KEY, ecodes.KEY_ESC, 0)
-                        ui.syn()
-                    elif event.code == 289: # Bouton Physique 2
-                        # INVERSION : on envoie ENTER (Vert) au lieu de ESC (Rouge)
-                        ui.write(ecodes.EV_KEY, ecodes.KEY_ENTER, 1)
-                        ui.write(ecodes.EV_KEY, ecodes.KEY_ENTER, 0)
-                        ui.syn()
+            while True:
+                r, _, _ = select.select([joystick.fd], [], [], 0.1)
 
-                # 2. GESTION DU JOYSTICK (Axes Y : Haut / Bas)
-                elif event.type == ecodes.EV_ABS:
-                    # Le code 1 (ABS_Y) ou 17 (ABS_HAT0Y) correspond à Haut/Bas
-                    if event.code == ecodes.ABS_Y or event.code == ecodes.ABS_HAT0Y:
-                        # Détection de la direction
-                        if event.value < 127 and event.value <= 0:
-                            current_y = -1 # Haut
-                        elif event.value > 128 or event.value == 1:
-                            current_y = 1  # Bas
-                        else:
-                            current_y = 0  # Centre
+                if r:
+                    for event in joystick.read():
+                        # --- 1. BOUTONS (Inversion Rouge/Vert) ---
+                        if event.type == ecodes.EV_KEY and event.value == 1:
+                            if event.code == 288: # Bouton 1 -> ESC (Rouge)
+                                ui.write(ecodes.EV_KEY, ecodes.KEY_ESC, 1); ui.write(ecodes.EV_KEY, ecodes.KEY_ESC, 0); ui.syn()
+                            elif event.code == 289: # Bouton 2 -> ENTER (Vert)
+                                ui.write(ecodes.EV_KEY, ecodes.KEY_ENTER, 1); ui.write(ecodes.EV_KEY, ecodes.KEY_ENTER, 0); ui.syn()
 
-                        # Si la direction a changé
-                        if current_y != last_x: # On réutilise ta variable last_x ou crée last_y au début
-                            if current_y == -1:
-                                ui.write(ecodes.EV_KEY, ecodes.KEY_UP, 1)
-                                ui.write(ecodes.EV_KEY, ecodes.KEY_UP, 0)
-                                ui.syn()
-                            elif current_y == 1:
-                                ui.write(ecodes.EV_KEY, ecodes.KEY_DOWN, 1)
-                                ui.write(ecodes.EV_KEY, ecodes.KEY_DOWN, 0)
-                                ui.syn()
-                            last_x = current_y # On met à jour l'état
+                        # --- 2. JOYSTICK ---
+                        elif event.type == ecodes.EV_ABS:
+                            
+                            # AXE X (Physiquement ton HAUT / BAS)
+                            if event.code == ecodes.ABS_X or event.code == ecodes.ABS_HAT0X:
+                                val = -1 if (event.value < 127 and event.value <= 0) else (1 if (event.value > 128 or event.value == 1) else 0)
+                                if val != last_x:
+                                    if val == -1: # HAUT physique
+                                        ui.write(ecodes.EV_KEY, ecodes.KEY_UP, 1); ui.write(ecodes.EV_KEY, ecodes.KEY_UP, 0); ui.syn()
+                                        start_time_up = time.time()
+                                        rotation_triggered = False
+                                    elif val == 1: # BAS physique
+                                        ui.write(ecodes.EV_KEY, ecodes.KEY_DOWN, 1); ui.write(ecodes.EV_KEY, ecodes.KEY_DOWN, 0); ui.syn()
+                                        start_time_up = None
+                                    else: start_time_up = None
+                                    last_x = val
+
+                            # AXE Y (Physiquement ton GAUCHE / DROITE)
+                            elif event.code == ecodes.ABS_Y or event.code == ecodes.ABS_HAT0Y:
+                                val = -1 if (event.value < 127 and event.value <= 0) else (1 if (event.value > 128 or event.value == 1) else 0)
+                                if val != last_y:
+                                    if val == -1: # GAUCHE physique -> On envoie Haut pour faire défiler
+                                        ui.write(ecodes.EV_KEY, ecodes.KEY_UP, 1); ui.write(ecodes.EV_KEY, ecodes.KEY_UP, 0); ui.syn()
+                                    elif val == 1: # DROITE physique -> On envoie Bas pour faire défiler
+                                        ui.write(ecodes.EV_KEY, ecodes.KEY_DOWN, 1); ui.write(ecodes.EV_KEY, ecodes.KEY_DOWN, 0); ui.syn()
+                                    last_y = val
+
+                # --- 3. TIMER ROTATION ---
+                if start_time_up and not rotation_triggered:
+                    if (time.time() - start_time_up) > HOLD_DELAY:
+                        toggle_rotation()
+                        rotation_triggered = True
 
         except Exception as e:
-            print(f"Erreur : {e}")
-            time.sleep(2)
+            print(f"⚠️ Erreur : {e}"); time.sleep(2)
 
 if __name__ == "__main__":
     run_bridge()
