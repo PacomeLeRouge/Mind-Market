@@ -65,7 +65,7 @@ export default function App() {
       // Les contraintes audio sont placées ICI, dans la fonction async
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
-	  sampleRate: 44100,
+	  sampleRate: 48000,
           channelCount: 1,
           echoCancellation: false,
           noiseSuppression: false,

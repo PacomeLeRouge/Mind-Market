@@ -6,7 +6,7 @@ sudo setterm -blank 0 -powersave off -powerdown 0
 
 sudo modprobe uinput
 sudo chmod 666 /dev/uinput
-
+pactl set-default-source alsa_input.usb-GeneralPlus_USB_Audio_Device-00.mono-fallback
 # On force le démarrage du son pour l'utilisateur
 pulseaudio --start --exit-idle-time=-1
 
