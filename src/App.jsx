@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { GreenButton, Hand, Joystick, OpenHub, RedButton, Whisper } from './svg/index.js';
+import { GreenButton, Hand, Joystick, MindMarketLogo, OpenHub, RedButton, Whisper } from './svg/index.js';
 
 // --- CONFIGURATION ---
 const KEYS = {
@@ -10,20 +10,23 @@ const KEYS = {
 };
 
 const QUESTIONS = [
-  { 
-    id: 'q_001', 
-    authorId: 'auth_101', 
-    text: 'Pensez-vous que les brosses à dents électriques sont plus durables que les brosses à dents manuelles ?' 
+  {
+    id: 'q_001',
+    authorId: 'auth_101',
+    text: 'Pensez-vous que les brosses à dents électriques sont plus durables que les brosses à dents manuelles ?',
+    projectName: 'EcoDent'
   },
-  { 
-    id: 'q_002', 
-    authorId: 'auth_102', 
-    text: 'Pour vous, quel produit du quotidien pourrait être repensé pour durer plus longtemps ?' 
+  {
+    id: 'q_002',
+    authorId: 'auth_102',
+    text: 'Pour vous, quel produit du quotidien pourrait être repensé pour durer plus longtemps ?',
+    projectName: 'DurableLife'
   },
-  { 
-    id: 'q_003', 
-    authorId: 'auth_101', 
-    text: 'Quelle innovation simple améliorerait le recyclage ou la réutilisation dans votre quotidien ?' 
+  {
+    id: 'q_003',
+    authorId: 'auth_101',
+    text: 'Quelle innovation simple améliorerait le recyclage ou la réutilisation dans votre quotidien ?',
+    projectName: 'RecycleSmart'
   }
 ];
 
@@ -203,6 +206,7 @@ export default function App() {
             </div>
             <div className={`question-card slide-${slideDir}`} key={questionIndex}>
               <p className="question-text">{QUESTIONS[questionIndex].text}</p>
+              <p className="project-name">{QUESTIONS[questionIndex].projectName}</p>
             </div>
             <div className="screen-actions">
               <div className="hint-block compact">
@@ -220,11 +224,17 @@ export default function App() {
         {activeStep === 'speak' && (
           <section className="screen-frame screen-speak fade-in-up">
             <div className="top-copy">
+              <button className="back-button" onClick={goToNextStep} aria-label="Retour">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M15 18L9 12L15 6" stroke="#111111" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
               <img className="hero-icon icon-small" src={Whisper} alt="Whisper" />
               <p className="eyebrow">Prêt à répondre ?</p>
             </div>
             <div className="question-card question-card--large">
               <p>{QUESTIONS[questionIndex].text}</p>
+              <p className="project-name">{QUESTIONS[questionIndex].projectName}</p>
             </div>
             <button className="action-button record pulse" onClick={handleActionRed}>
               <img src={RedButton} alt="Rouge" />
@@ -280,6 +290,7 @@ export default function App() {
               <p>Votre voix a été enregistrée avec succès.</p>
             </div>
             <div className="partner-block">
+              <img src={MindMarketLogo} alt="Mind&Market" className="mindmarket-logo" />
               <img src={OpenHub} alt="OpenHub" className="openhub" />
               <p className="partner-note">Dispositif réalisé par l'UCLouvain OpenHub.</p>
             </div>

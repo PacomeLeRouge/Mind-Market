@@ -54,8 +54,8 @@ img {
 }
 
 .device-frame {
-  --tv-shell-gap: clamp(28px, 6vw, 64px);
-  --tv-zoom: 1.34;
+  --tv-shell-gap: clamp(20px, 4vw, 48px);
+  --tv-zoom: 1.52;
   --tv-screen-height: min(
     calc((100vw - var(--tv-shell-gap) * 2) / var(--tv-zoom)),
     calc(((100vh - var(--tv-shell-gap) * 2) * 16 / 9) / var(--tv-zoom)),
@@ -104,6 +104,28 @@ img {
   text-align: center;
   gap: 8px;
   padding-top: 6px;
+  position: relative;
+}
+
+.back-button {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  padding: 8px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 120ms ease;
+}
+
+.back-button:hover {
+  background: rgba(17, 17, 17, 0.06);
+}
+
+.back-button svg {
+  display: block;
 }
 
 .top-copy--spacious {
@@ -168,7 +190,19 @@ img {
 }
 
 .question-text {
-  text-wrap: balance;
+  margin: 0;
+  font-size: clamp(1.1rem, 3.8vw, 1.45rem);
+  line-height: 1.5;
+  font-weight: 500;
+}
+
+.project-name {
+  margin: 8px 0 0;
+  font-size: 7px;
+  font-weight: 400;
+  color: rgba(17, 17, 17, 0.35);
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .question-card--large p {
@@ -297,6 +331,11 @@ img {
 
 .openhub {
   width: min(46vw, 145px);
+}
+
+.mindmarket-logo {
+  width: min(34vw, 110px);
+  margin-bottom: 12px;
 }
 
 .partner-note {
@@ -431,8 +470,8 @@ img {
   }
 
   .device-frame {
-    --tv-shell-gap: 18px;
-    --tv-zoom: 1.42;
+    --tv-shell-gap: 14px;
+    --tv-zoom: 1.58;
     --tv-screen-height: min(
       calc((100vw - var(--tv-shell-gap) * 2) / var(--tv-zoom)),
       calc(((100vh - var(--tv-shell-gap) * 2) * 16 / 9) / var(--tv-zoom))
