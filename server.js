@@ -107,6 +107,18 @@ app.get('/api/audios', (req, res) => {
 // Servir les fichiers audio
 app.use('/uploads', express.static(uploadsDir));
 
+// --- AJOUT : Route pour lire les questions dynamiquement ---
+app.get('/api/questions', (req, res) => {
+  try {
+    const questionsPath = path.join(__dirname, 'questions.json');
+    const data = fs.readFileSync(questionsPath, 'utf8');
+    res.json(JSON.parse(data));
+  } catch (error) {
+    console.error('Erreur lors de la lecture des questions:', error);
+    res.status(500).json({ error: 'Impossible de charger les questions' });
+  }
+});
+
 // Fallback pour SPA (React Router)
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));

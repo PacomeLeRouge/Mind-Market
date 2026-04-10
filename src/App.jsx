@@ -5,40 +5,32 @@ import { GreenButton, Hand, Joystick, MindMarketLogo, OpenHub, RedButton, Whispe
 const KEYS = {
   GREEN: 'Enter',
   RED: 'Escape',
-  JOY_UP: 'ArrowDown',     // Câblage inversé physiquement
-  JOY_DOWN: 'ArrowUp'      // Câblage inversé physiquement
+  JOY_UP: 'ArrowDown',
+  JOY_DOWN: 'ArrowUp'
 };
-
-const QUESTIONS = [
-  {
-    id: 'q_001',
-    authorId: 'auth_101',
-    text: 'Pensez-vous que les brosses à dents électriques sont plus durables que les brosses à dents manuelles ?',
-    projectName: 'EcoDent'
-  },
-  {
-    id: 'q_002',
-    authorId: 'auth_102',
-    text: 'Pour vous, quel produit du quotidien pourrait être repensé pour durer plus longtemps ?',
-    projectName: 'DurableLife'
-  },
-  {
-    id: 'q_003',
-    authorId: 'auth_101',
-    text: 'Quelle innovation simple améliorerait le recyclage ou la réutilisation dans votre quotidien ?',
-    projectName: 'RecycleSmart'
-  }
-];
 
 const STEPS = ['question', 'speak', 'recording', 'confirm', 'thanks'];
 const QUESTION_ROTATION_MS = 8000;
 const THANKS_RESTART_MS = 10000;
 const MIN_RECORDING_MS = 4000;
 
+// Fonction utilitaire pour mélanger un tableau (Algorithme de Fisher-Yates)
+const shuffleArray = (array) => {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+};
+
 export default function App() {
+  // NOUVEAU: État pour stocker les questions
+  const [questions, setQuestions] = useState([]);
+  
   const [activeStep, setActiveStep] = useState('question');
   const [questionIndex, setQuestionIndex] = useState(0);
-  const [slideDir, setSlideDir] = useState('next'); 
+  const [slideDir, setSlideDir] = useState('next');
   const [isRecording, setIsRecording] = useState(false);
   const [recordedAudio, setRecordedAudio] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -47,6 +39,14 @@ export default function App() {
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const recordingStartTimeRef = useRef(null);
+
+  // NOUVEAU: Charger les questions au montage du composant
+  useEffect(() => {
+    fetch('/api/questions')
+      .then(res => res.json())
+      .then(data => setQuestions(shuffleArray(data)))
+      .catch(err => console.error("Erreur chargement questions:", err));
+  }, []);
 
   const goToNextStep = useCallback(() => {
     const currentIndex = STEPS.indexOf(activeStep);
@@ -60,20 +60,20 @@ export default function App() {
     setSlideDir('next');
     setRecordedAudio(null);
     setUploadError(null);
+    // NOUVEAU: Remélanger les questions à chaque redémarrage
+    setQuestions(prevQuestions => shuffleArray(prevQuestions));
   }, []);
 
-  // --- LOGIQUE AUDIO (CORRIGÉE) ---
   const startRecording = async () => {
     try {
-      // Les contraintes audio sont placées ICI, dans la fonction async
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-	  sampleRate: 48000,
+          sampleRate: 48000,
           channelCount: 1,
           echoCancellation: false,
           noiseSuppression: false,
           autoGainControl: false
-        } 
+        }
       });
 
       const mediaRecorder = new MediaRecorder(stream);
@@ -111,15 +111,13 @@ export default function App() {
   };
 
   const handleUpload = async () => {
-    if (!recordedAudio || isUploading) return;
+    if (!recordedAudio || isUploading || questions.length === 0) return;
     setIsUploading(true);
     const formData = new FormData();
-    
-    // On attache les IDs et le texte AVANT le fichier
-    formData.append('questionId', QUESTIONS[questionIndex].id);
-    formData.append('authorId', QUESTIONS[questionIndex].authorId);
-    formData.append('questionText', QUESTIONS[questionIndex].text);
-    
+
+    formData.append('questionId', questions[questionIndex].id);
+    formData.append('authorId', questions[questionIndex].authorId);
+    formData.append('questionText', questions[questionIndex].text);
     formData.append('audio', recordedAudio, 'recording.webm');
 
     try {
@@ -149,14 +147,14 @@ export default function App() {
   }, [activeStep, isRecording]);
 
   const handleJoystick = useCallback((direction) => {
-    if (activeStep === 'question') {
-      setSlideDir(direction); 
+    if (activeStep === 'question' && questions.length > 0) {
+      setSlideDir(direction);
       setQuestionIndex(prev => {
-        if (direction === 'next') return (prev + 1) % QUESTIONS.length;
-        return (prev - 1 + QUESTIONS.length) % QUESTIONS.length;
+        if (direction === 'next') return (prev + 1) % questions.length;
+        return (prev - 1 + questions.length) % questions.length;
       });
     }
-  }, [activeStep]);
+  }, [activeStep, questions.length]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -171,7 +169,7 @@ export default function App() {
 
   useEffect(() => {
     let timer;
-    if (activeStep === 'question') {
+    if (activeStep === 'question' && questions.length > 0) {
       timer = setInterval(() => handleJoystick('next'), QUESTION_ROTATION_MS);
     } else if (activeStep === 'thanks') {
       timer = setTimeout(restartFlow, THANKS_RESTART_MS);
@@ -180,7 +178,12 @@ export default function App() {
       if (timer) clearInterval(timer);
       if (timer) clearTimeout(timer);
     };
-  }, [activeStep, questionIndex, handleJoystick, restartFlow]);
+  }, [activeStep, questionIndex, handleJoystick, restartFlow, questions.length]);
+
+  // Si les questions ne sont pas encore chargées, on affiche un écran d'attente
+  if (questions.length === 0) {
+    return <main className="app-shell"><div className="device-frame"><div className="screen-frame"><p>Chargement des questions...</p></div></div></main>;
+  }
 
   return (
     <main className="app-shell">
@@ -204,9 +207,9 @@ export default function App() {
               <h1>Aidez un porteur de projet</h1>
               <p>en répondant à l'une de ces questions</p>
             </div>
-            <div className={`question-card slide-${slideDir}`} key={questionIndex}>
-              <p className="question-text">{QUESTIONS[questionIndex].text}</p>
-              <p className="project-name">{QUESTIONS[questionIndex].projectName}</p>
+            <div className={`question-card slide-${slideDir}`} key={questions[questionIndex].id}>
+              <p className="question-text">{questions[questionIndex].text}</p>
+              <p className="project-name">{questions[questionIndex].projectName}</p>
             </div>
             <div className="screen-actions">
               <div className="hint-block compact">
@@ -233,8 +236,8 @@ export default function App() {
               <p className="eyebrow">Prêt à répondre ?</p>
             </div>
             <div className="question-card question-card--large">
-              <p>{QUESTIONS[questionIndex].text}</p>
-              <p className="project-name">{QUESTIONS[questionIndex].projectName}</p>
+              <p>{questions[questionIndex].text}</p>
+              <p className="project-name">{questions[questionIndex].projectName}</p>
             </div>
             <button className="action-button record pulse" onClick={handleActionRed}>
               <img src={RedButton} alt="Rouge" />
