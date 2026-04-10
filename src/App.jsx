@@ -14,7 +14,6 @@ const QUESTION_ROTATION_MS = 8000;
 const THANKS_RESTART_MS = 10000;
 const MIN_RECORDING_MS = 4000;
 
-// Fonction utilitaire pour mélanger un tableau (Algorithme de Fisher-Yates)
 const shuffleArray = (array) => {
   const shuffled = [...array];
   for (let i = shuffled.length - 1; i > 0; i--) {
@@ -25,7 +24,6 @@ const shuffleArray = (array) => {
 };
 
 export default function App() {
-  // NOUVEAU: État pour stocker les questions
   const [questions, setQuestions] = useState([]);
   
   const [activeStep, setActiveStep] = useState('question');
@@ -40,7 +38,6 @@ export default function App() {
   const audioChunksRef = useRef([]);
   const recordingStartTimeRef = useRef(null);
 
-  // NOUVEAU: Charger les questions au montage du composant
   useEffect(() => {
     fetch('/api/questions')
       .then(res => res.json())
@@ -60,7 +57,6 @@ export default function App() {
     setSlideDir('next');
     setRecordedAudio(null);
     setUploadError(null);
-    // NOUVEAU: Remélanger les questions à chaque redémarrage
     setQuestions(prevQuestions => shuffleArray(prevQuestions));
   }, []);
 
@@ -131,20 +127,23 @@ export default function App() {
     }
   };
 
-  const handleActionGreen = useCallback(() => {
+  // --- LOGIQUE DES BOUTONS MISE À JOUR ---
+  const handleActionGreen = () => {
     if (activeStep === 'question') goToNextStep();
+    else if (activeStep === 'speak') startRecording();
+    else if (activeStep === 'recording') stopRecording();
     else if (activeStep === 'confirm') handleUpload();
     else if (activeStep === 'thanks') restartFlow();
-  }, [activeStep, goToNextStep, handleUpload, restartFlow]);
+  };
 
-  const handleActionRed = useCallback(() => {
-    if (activeStep === 'speak') startRecording();
-    else if (activeStep === 'recording') stopRecording();
+  const handleActionRed = () => {
+    if (activeStep === 'speak') setActiveStep('question'); // Retour en arrière
     else if (activeStep === 'confirm') {
       setRecordedAudio(null);
       setActiveStep('speak');
     }
-  }, [activeStep, isRecording]);
+  };
+  // ----------------------------------------
 
   const handleJoystick = useCallback((direction) => {
     if (activeStep === 'question' && questions.length > 0) {
@@ -180,7 +179,6 @@ export default function App() {
     };
   }, [activeStep, questionIndex, handleJoystick, restartFlow, questions.length]);
 
-  // Si les questions ne sont pas encore chargées, on affiche un écran d'attente
   if (questions.length === 0) {
     return <main className="app-shell"><div className="device-frame"><div className="screen-frame"><p>Chargement des questions...</p></div></div></main>;
   }
@@ -224,14 +222,10 @@ export default function App() {
           </section>
         )}
 
+        {/* --- ÉTAPE SPEAK MODIFIÉE --- */}
         {activeStep === 'speak' && (
           <section className="screen-frame screen-speak fade-in-up">
             <div className="top-copy">
-              <button className="back-button" onClick={goToNextStep} aria-label="Retour">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M15 18L9 12L15 6" stroke="#111111" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </button>
               <img className="hero-icon icon-small" src={Whisper} alt="Whisper" />
               <p className="eyebrow">Prêt à répondre ?</p>
             </div>
@@ -239,13 +233,21 @@ export default function App() {
               <p>{questions[questionIndex].text}</p>
               <p className="project-name">{questions[questionIndex].projectName}</p>
             </div>
-            <button className="action-button record pulse" onClick={handleActionRed}>
-              <img src={RedButton} alt="Rouge" />
-              <span>Bouton ROUGE pour enregistrer</span>
-            </button>
+            
+            <div className="button-stack button-stack--split">
+              <button className="action-button confirm pulse" onClick={handleActionGreen}>
+                <img src={GreenButton} alt="Vert" />
+                <span>VERT : Enregistrer</span>
+              </button>
+              <button className="action-button record" onClick={handleActionRed}>
+                <img src={RedButton} alt="Rouge" />
+                <span>ROUGE : Retour</span>
+              </button>
+            </div>
           </section>
         )}
 
+        {/* --- ÉTAPE RECORDING MODIFIÉE --- */}
         {activeStep === 'recording' && (
           <section className="screen-frame screen-recording fade-in-up">
             <div className="top-copy">
@@ -258,9 +260,9 @@ export default function App() {
                </div>
                <p>Parlez maintenant !</p>
             </div>
-            <button className="action-button record" onClick={handleActionRed}>
-              <img src={RedButton} alt="Rouge" />
-              <span>Bouton ROUGE pour FINIR</span>
+            <button className="action-button confirm" onClick={handleActionGreen}>
+              <img src={GreenButton} alt="Vert" />
+              <span>Bouton VERT pour FINIR</span>
             </button>
           </section>
         )}
