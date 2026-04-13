@@ -7,7 +7,10 @@ import select
 # --- CONFIGURATION ROTATION ---
 SCREEN_NAME = "HDMI-1"
 HOLD_DELAY = 5.0
-current_rotation = "normal"
+
+# NOUVEAU : On définit les 4 positions possibles
+ROTATIONS = ["normal", "right", "inverted", "left"]
+current_rot_idx = 0
 
 # On ajoute KEY_LEFT/RIGHT au cas où ton React en ait besoin un jour
 cap = {
@@ -16,13 +19,15 @@ cap = {
 ui = UInput(cap)
 
 def toggle_rotation():
-    global current_rotation
-    new_rot = "inverted" if current_rotation == "normal" else "normal"
+    global current_rot_idx
+    # NOUVEAU : On passe à la rotation suivante dans la liste (tourne de 90°)
+    current_rot_idx = (current_rot_idx + 1) % len(ROTATIONS)
+    new_rot = ROTATIONS[current_rot_idx]
+    
     print(f"🔄 Commande de rotation : {new_rot}")
     try:
         cmd = f"DISPLAY=:0 xrandr --output {SCREEN_NAME} --rotate {new_rot}"
         subprocess.run(cmd, shell=True, check=True)
-        current_rotation = new_rot
     except Exception as e:
         print(f"❌ Erreur xrandr : {e}")
 
