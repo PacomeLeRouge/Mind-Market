@@ -12,7 +12,7 @@ const KEYS = {
 const STEPS = ['question', 'speak', 'recording', 'confirm', 'thanks'];
 const QUESTION_ROTATION_MS = 8000;
 const THANKS_RESTART_MS = 10000;
-const MIN_RECORDING_MS = 4000;
+const MIN_RECORDING_MS = 2000;
 
 const shuffleArray = (array) => {
   const shuffled = [...array];
